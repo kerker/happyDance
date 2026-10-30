@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>報名系統・管理後台</title>
+<style>
+:root{--bg:#f1edf6;--fg:#1f1830;--card:#fff;--ac:#b0125f;--acfg:#fff;--mut:#6f6783;--bd:#d9d1e6}
+@media(prefers-color-scheme:dark){:root{--bg:#17121f;--fg:#efeaf7;--card:#221b2e;--ac:#f06aa6;--acfg:#1a0b13;--mut:#a79cbd;--bd:#3a3050}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 "Noto Sans TC",system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.4rem;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:18px;margin-top:16px}
+label{display:block;margin-top:12px;font-weight:600}
+input[type=text],input[type=password]{width:100%;font:inherit;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg)}
+.plans label{font-weight:400;margin:6px 0;display:flex;gap:8px;align-items:center}
+button{font:inherit;font-weight:700;padding:10px 18px;border:0;border-radius:8px;background:var(--ac);color:var(--acfg);cursor:pointer;margin-top:14px}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--bd);margin:0 6px 0 0}
+button.ghost.on{border-color:var(--ac);color:var(--ac)}
+:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.msg{margin-top:10px;font-weight:600}.err{color:#d32f2f}
+.code{font:800 1.8rem/1.2 ui-monospace,monospace;letter-spacing:.2em;color:var(--ac)}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-align:top}
+td.c{font-family:ui-monospace,monospace;letter-spacing:.1em}
+.mut{color:var(--mut);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>管理後台</h1>
+  <label for="pw">管理員密碼</label>
+  <input id="pw" type="password" autocomplete="current-password">
+  <div style="margin-top:14px">
+    <button class="ghost on" id="t1">建立會員</button><button class="ghost" id="t2">會員管理</button>
+  </div>
+
+  <section id="create" class="card">
+    <label for="name">名字</label><input id="name" type="text">
+    <label for="line">Line 別名</label><input id="line" type="text">
+    <label>課程選項</label>
+    <div class="plans" id="plans"></div>
+    <button id="make">建立會員</button>
+    <p id="cmsg" class="msg"></p>
+  </section>
+
+  <section id="manage" class="card" hidden>
+    <div class="wrap"><table>
+      <thead><tr><th>專屬帳號</th><th>名字</th><th>Line 別名</th><th>課程選項</th><th>剩餘堂數</th><th>已預約日期</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <p id="mmsg" class="msg"></p>
+  </section>
+</main>
+<script>
+const API = 'https://dance-signup.where330.workers.dev/'; // ← 換成你的 Worker 網址
+const PLANS = { single: '單堂課程', fri4: '四堂週五優惠課程', sun4: '四堂週日優惠課程', fri8: '八堂週五優惠課程', sun8: '八堂週日優惠課程' };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (d) => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+$('pw').value = sessionStorage.getItem('pw') || '';
+
+$('plans').innerHTML = Object.entries(PLANS).map(([k, v], i) => `<label><input type="radio" name="plan" value="${k}" ${i ? '' : 'checked'}>${v}</label>`).join('');
+
+async function call(body) {
+  sessionStorage.setItem('pw', $('pw').value);
+  try {
+    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ ...body, password: $('pw').value }) });
+    return await r.json();
+  } catch { return { ok: false, error: '連線失敗，請稍後再試' }; }
+}
+function tab(n) {
+  $('create').hidden = n !== 1; $('manage').hidden = n !== 2;
+  $('t1').classList.toggle('on', n === 1); $('t2').classList.toggle('on', n === 2);
+  if (n === 2) load();
+}
+$('t1').onclick = () => tab(1); $('t2').onclick = () => tab(2);
+
+$('make').onclick = async () => {
+  const m = $('cmsg'); m.className = 'msg'; m.textContent = '建立中…';
+  const res = await call({ action: 'admin_create', name: $('name').value, line: $('line').value, plan: document.querySelector('input[name=plan]:checked').value });
+  if (!res.ok) { m.className = 'msg err'; m.textContent = res.error; return; }
+  m.innerHTML = `已建立 ${esc($('name').value)}，專屬帳號：<div class="code">${res.code}</div><span class="mut">請把這組帳號傳給會員。</span>`;
+  $('name').value = ''; $('line').value = '';
+};
+async function load() {
+  $('mmsg').className = 'msg'; $('mmsg').textContent = '載入中…';
+  const res = await call({ action: 'admin_list' });
+  if (!res.ok) { $('mmsg').className = 'msg err'; $('mmsg').textContent = res.error; $('rows').innerHTML = ''; return; }
+  $('mmsg').textContent = res.members.length ? '' : '還沒有會員，先到「建立會員」新增。';
+  $('rows').innerHTML = res.members.map((m) => `<tr><td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td><td>${esc(m.plan)}</td><td>${m.remaining}</td><td>${m.booked.map(fmt).join('、') || '—'}</td></tr>`).join('');
+}
+</script>
+</body>
+</html>
