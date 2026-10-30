@@ -73,7 +73,7 @@ $('loginBtn').onclick = async () => {
   if (!res.ok) { $('loginMsg').textContent = res.error; return; }
   info = res.info; $('login').hidden = true; $('app').hidden = false; render();
 };
-$('code').onkeydown = (e) => e.key === 'Enter' && $('loginBtn').click();
+//$('code').onkeydown = (e) => e.key === 'Enter' && $('loginBtn').click();
 
 function render() {
   $('who').textContent = `${info.name}｜${info.plan}`;
