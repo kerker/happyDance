@@ -87,7 +87,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
 const ymd = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}`;
-const sum = (m) => Object.entries(m.packs.reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
+const sum = (m) => Object.entries(m.packs.filter((p) => !p.revoked).reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
 const opts = Object.entries(PLANS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
 let MEMBERS = [];
 $('pw').value = sessionStorage.getItem('pw') || '';
@@ -138,14 +138,25 @@ async function load(n) {
 }
 const dlg = $('dlg');
 $('dx').onclick = () => dlg.close();
-dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+dlg.addEventListener('click', async (e) => {
+  if (e.target === dlg) { dlg.close(); return; }
+  const d = e.target.dataset;
+  if (!d.rv) return;
+  const note = +d.u ? `這份課程已預約的 ${d.u} 堂會一併取消。` : '這份課程目前沒有預約。';
+  if (!confirm(`確定回收「${d.l}」？${note}回收後會員將無法再使用這份課程。`)) return;
+  const res = await call({ action: 'admin_revoke_pack', code: d.c, packId: d.rv });
+  if (!res.ok) { alert(res.error); return; }
+  dlg.close(); load('manage');
+});
 $('manage').onclick = async (e) => {
   const lg = e.target.dataset.log;
   if (lg) {
     const m = MEMBERS.find((x) => x.code === lg);
     $('dt').textContent = `${m.name} 的購買紀錄`;
     $('ds').textContent = `帳號 ${m.code}｜合計剩 ${m.remaining} 堂`;
-    $('db').innerHTML = m.packs.map((p) => `<div class="rec"><b>${esc(p.label)}</b><br><span class="mut">${ymd(p.date)} 購買｜已用 ${p.total - p.remaining}／${p.total} 堂，剩 ${p.remaining} 堂</span></div>`).join('');
+    $('db').innerHTML = m.packs.map((p) => p.revoked
+      ? `<div class="rec" style="opacity:.55"><b>${esc(p.label)}</b> <span class="x">已回收</span><br><span class="mut">${ymd(p.date)} 購買</span></div>`
+      : `<div class="rec"><b>${esc(p.label)}</b><br><span class="mut">${ymd(p.date)} 購買｜已用 ${p.total - p.remaining}／${p.total} 堂，剩 ${p.remaining} 堂</span><br><button class="sm line" style="margin-top:6px" data-rv="${p.id}" data-c="${m.code}" data-u="${p.total - p.remaining}" data-l="${esc(p.label)}">回收這份課程</button></div>`).join('');
     dlg.showModal();
     return;
   }

@@ -76,7 +76,7 @@ const $ = (id) => document.getElementById(id);
 let code = '', info = null;
 
 const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
-const STATUS = { booked: ['已預約', 'ok'], done: ['已上課', ''], 'cancel-admin': ['老師已取消，堂數已退回', 'x'], 'cancel-member': ['你已取消，堂數已退回', 'x'] };
+const STATUS = { booked: ['已預約', 'ok'], done: ['已上課', ''], 'cancel-admin': ['老師已取消，堂數已退回', 'x'], 'cancel-member': ['你已取消，堂數已退回', 'x'], 'cancel-revoke': ['課程已由老師調整，此預約已取消', 'x'] };
 async function call(body) {
   try {
     const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) });

@@ -61,14 +61,15 @@ function upcoming(days) {
   return out;
 }
 const active = (b) => b.status !== 'cancelled';
-const left = (m, p) => p.total - m.bookings.filter((b) => b.packId === p.id && active(b)).length;
+const left = (m, p) => (p.revoked ? 0 : p.total - m.bookings.filter((b) => b.packId === p.id && active(b)).length);
+const live = (m) => m.packs.filter((p) => !p.revoked); // 已回收的課程不計入
 // 取消時限：以上課日台灣時間 00:00 為基準
 const canCancel = (b, data) => active(b) && b.date >= today() && Date.parse(b.date + 'T00:00:00+08:00') - Date.now() >= data.settings.cancelHours * 3600e3;
 
 function view(m, data) {
   const t = today();
   const caps = { fri: 0, sun: 0, flex: 0 };
-  m.packs.forEach((p) => {
+  live(m).forEach((p) => {
     const r = left(m, p);
     if (p.plan === 'single') caps.flex += r; else if (PLANS[p.plan].days[0] === 5) caps.fri += r; else caps.sun += r;
   });
@@ -76,7 +77,7 @@ function view(m, data) {
   const options = upcoming([5, 0]).filter((d) => !have.has(d) && !data.cancelled[d] && (dayOf(d) === 5 ? caps.fri : caps.sun) + caps.flex > 0);
   return {
     name: m.name,
-    packs: m.packs.map((p) => ({ label: PLANS[p.plan].label, remaining: left(m, p) })),
+    packs: live(m).map((p) => ({ label: PLANS[p.plan].label, remaining: left(m, p) })),
     caps, options, remaining: caps.fri + caps.sun + caps.flex, cancelHours: data.settings.cancelHours,
     history: [...m.bookings].sort((a, b) => (a.date < b.date ? 1 : -1)).map((b) => ({
       date: b.date,
@@ -88,8 +89,8 @@ function view(m, data) {
 }
 // 配堂：優先扣優惠課程，其次單堂課程
 function allocate(m, dates) {
-  const rem = new Map(m.packs.map((p) => [p.id, left(m, p)]));
-  const order = [...m.packs].sort((a, b) => (a.plan === 'single') - (b.plan === 'single'));
+  const rem = new Map(live(m).map((p) => [p.id, left(m, p)]));
+  const order = [...live(m)].sort((a, b) => (a.plan === 'single') - (b.plan === 'single'));
   return dates.map((d) => {
     const p = order.find((p) => PLANS[p.plan].days.includes(dayOf(d)) && rem.get(p.id) > 0);
     if (!p) throw new Error('選的堂數超過剩餘堂數，或不符合課程規則');
@@ -153,6 +154,7 @@ export default {
           members: data.members.map((m) => ({
             code: m.code, name: m.name, line: m.line,
             packs: m.packs.map((p) => ({
+              id: p.id, revoked: !!p.revoked,
               label: PLANS[p.plan].label, total: p.total, remaining: left(m, p),
               date: new Date(new Date(p.added || m.created || Date.now()).getTime() + 8 * 3600e3).toISOString().slice(0, 10),
             })),
@@ -180,6 +182,20 @@ export default {
           m.packs.push({ id: 'p' + Date.now().toString(36), plan: b.plan, total: PLANS[b.plan].total, added: new Date().toISOString() });
         });
         return reply({ ok: true });
+      }
+      if (b.action === 'admin_revoke_pack') {
+        const n = await mutate(env, (data) => {
+          const m = findMember(data, b.code);
+          const p = m && m.packs.find((x) => x.id === b.packId && !x.revoked);
+          if (!p) throw new Error('找不到這份課程，或已經回收過了');
+          p.revoked = true; p.revokedAt = new Date().toISOString();
+          let c = 0;
+          m.bookings.forEach((x) => {
+            if (x.packId === p.id && active(x)) { x.status = 'cancelled'; x.by = 'revoke'; x.cancelledAt = p.revokedAt; c++; }
+          });
+          return c;
+        });
+        return reply({ ok: true, cancelled: n });
       }
       if (b.action === 'admin_cancel_date') {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || b.date < today()) return reply({ ok: false, error: '只能取消今天以後的日期' });
