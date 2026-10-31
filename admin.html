@@ -117,7 +117,7 @@ $('make').onclick = async () => {
   const m = $('cmsg'); m.className = 'msg'; m.textContent = '建立中…';
   const res = await call({ action: 'admin_create', name: $('name').value, phone: $('phone').value, line: $('line').value, plan: document.querySelector('input[name=plan]:checked').value });
   if (!res.ok) { m.className = 'msg err'; m.textContent = res.error; return; }
-  m.innerHTML = `已建立 ${esc($('name').value)}，專屬帳號：<div class="code">${res.code}</div><span class="mut">請把這組帳號傳給會員。</span>`;
+  m.innerHTML = `已建立 ${esc($('name').value)}，專屬帳號：<div class="code">${res.code}</div><button class="sm line" data-copy="${res.code}" style="margin:6px 0">一鍵複製帳號</button><br><span class="mut">請把這組帳號傳給會員。</span>`;
   $('name').value = ''; $('phone').value = ''; $('line').value = '';
 };
 
@@ -133,7 +133,7 @@ async function load(n) {
     $('fi').textContent = `非活躍會員（${res.members.filter((m) => m.inactive).length}）`;
     $('fa').classList.toggle('on', !SHOWINACTIVE); $('fi').classList.toggle('on', SHOWINACTIVE);
     $('rows').innerHTML = res.members.filter((m) => !!m.inactive === SHOWINACTIVE).map((m) => `<tr>
-      <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.phone ? fmtPhone(m.phone) : '—')}</td><td>${esc(m.line)}</td>
+      <td class="c">${esc(m.code)}<br><button class="sm line" data-copy="${esc(m.code)}" style="margin-top:4px">複製</button></td><td>${esc(m.name)}</td><td>${esc(m.phone ? fmtPhone(m.phone) : '—')}</td><td>${esc(m.line)}</td>
       <td><b>購買統計：</b>${esc(sum(m))}<br><b>合計剩 ${m.remaining} 堂</b><br><button class="sm line" data-log="${m.code}">購買紀錄</button></td>
       <td>${m.booked.length ? `${m.booked.length} 堂<br><button class="sm line" data-book="${m.code}">查看日期</button>` : '—'}</td>
       <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || `<tr><td colspan="7">${SHOWINACTIVE ? '沒有非活躍會員。' : '沒有活躍會員。'}</td></tr>`;
@@ -205,6 +205,15 @@ $('phone').addEventListener('blur', () => {
   if (v.startsWith('886')) v = '0' + v.slice(3).replace(/^0/, '');
   if (/^9\d{8}$/.test(v)) v = '0' + v;
   $('phone').value = fmtPhone(v);
+});
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  const t = b.dataset.copy;
+  try { await navigator.clipboard.writeText(t); }
+  catch { const x = document.createElement('textarea'); x.value = t; document.body.append(x); x.select(); document.execCommand('copy'); x.remove(); }
+  const old = b.textContent; b.textContent = '已複製 ✓';
+  setTimeout(() => { b.textContent = old; }, 1500);
 });
 $('xl').onclick = () => {
   if (!STATS.length) { alert('目前沒有資料可匯出'); return; }
