@@ -31,6 +31,10 @@ th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-ali
 td.c{font-family:ui-monospace,monospace;letter-spacing:.1em}
 .mut{color:var(--mut);font-size:.9rem}.x{color:#d32f2f;font-weight:600}
 tr.past td{opacity:.55}
+dialog{border:1px solid var(--bd);border-radius:12px;background:var(--card);color:var(--fg);padding:20px;width:min(520px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h2{font-size:1.15rem;margin:0 0 4px}
+.rec{padding:10px 0;border-bottom:1px solid var(--bd)}.rec:last-of-type{border:0}
 </style>
 </head>
 <body>
@@ -70,6 +74,12 @@ tr.past td{opacity:.55}
     <p id="smsg" class="msg"></p>
   </section>
 </main>
+<dialog id="dlg">
+  <h2 id="dt"></h2>
+  <p class="mut" id="ds"></p>
+  <div id="db"></div>
+  <button id="dx">關閉</button>
+</dialog>
 <script>
 const API = 'https://dance-signup.where330.workers.dev'; // ← 你的 Worker 網址
 const PLANS = { single: '單堂課程', fri4: '四堂週五優惠課程', sun4: '四堂週日優惠課程', fri8: '八堂週五優惠課程', sun8: '八堂週日優惠課程' };
@@ -79,6 +89,7 @@ const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'�
 const ymd = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}`;
 const sum = (m) => Object.entries(m.packs.reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
 const opts = Object.entries(PLANS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+let MEMBERS = [];
 $('pw').value = sessionStorage.getItem('pw') || '';
 $('plans').innerHTML = Object.entries(PLANS).map(([k, v], i) => `<label><input type="radio" name="plan" value="${k}" ${i ? '' : 'checked'}>${v}</label>`).join('');
 
@@ -111,9 +122,10 @@ async function load(n) {
   if (!res.ok) { msg.className = 'msg err'; msg.textContent = res.error; return; }
   msg.textContent = '';
   if (n === 'manage') {
+    MEMBERS = res.members;
     $('rows').innerHTML = res.members.map((m) => `<tr>
       <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td>
-      <td><b>購買統計：</b>${esc(sum(m))}<br><span class="mut">購買紀錄</span><br>${m.packs.map((p) => `${esc(p.label)}　${ymd(p.date)} 購買　已用 ${p.total - p.remaining}／${p.total}，剩 ${p.remaining} 堂`).join('<br>')}<br><b>合計剩 ${m.remaining} 堂</b></td>
+      <td><b>購買統計：</b>${esc(sum(m))}<br><b>合計剩 ${m.remaining} 堂</b><br><button class="sm line" data-log="${m.code}">購買紀錄</button></td>
       <td>${m.booked.map(fmt).join('<br>') || '—'}</td>
       <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || '<tr><td colspan="6">還沒有會員。</td></tr>';
   } else {
@@ -124,7 +136,19 @@ async function load(n) {
       <td>${!s.cancelled && !s.past ? `<button class="sm line" data-cx="${s.date}" data-n="${s.count}">取消這天</button>` : ''}</td></tr>`).join('');
   }
 }
+const dlg = $('dlg');
+$('dx').onclick = () => dlg.close();
+dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
 $('manage').onclick = async (e) => {
+  const lg = e.target.dataset.log;
+  if (lg) {
+    const m = MEMBERS.find((x) => x.code === lg);
+    $('dt').textContent = `${m.name} 的購買紀錄`;
+    $('ds').textContent = `帳號 ${m.code}｜合計剩 ${m.remaining} 堂`;
+    $('db').innerHTML = m.packs.map((p) => `<div class="rec"><b>${esc(p.label)}</b><br><span class="mut">${ymd(p.date)} 購買｜已用 ${p.total - p.remaining}／${p.total} 堂，剩 ${p.remaining} 堂</span></div>`).join('');
+    dlg.showModal();
+    return;
+  }
   const code = e.target.dataset.add; if (!code) return;
   const plan = document.querySelector(`select[data-s="${code}"]`).value;
   if (!confirm(`為 ${code} 加入「${PLANS[plan]}」？`)) return;
