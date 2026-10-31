@@ -67,6 +67,7 @@ dialog h2{font-size:1.15rem;margin:0 0 4px}
     <label for="hours">會員自行取消時限（上課日前幾小時，0 表示上課日前都可取消）</label>
     <input id="hours" type="number" min="0" style="width:100px"> 小時 <button class="sm" id="saveHours">儲存</button>
     <p class="mut">以上課日台灣時間 00:00 為基準計算。</p>
+    <button class="sm line" id="xl" style="margin-bottom:10px">匯出 Excel</button>
     <div class="wrap"><table>
       <thead><tr><th>日期</th><th>報名人數</th><th>名單</th><th>狀態</th><th></th></tr></thead>
       <tbody id="srows"></tbody>
@@ -80,6 +81,7 @@ dialog h2{font-size:1.15rem;margin:0 0 4px}
   <div id="db"></div>
   <button id="dx">關閉</button>
 </dialog>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const API = 'https://dance-signup.where330.workers.dev'; // ← 你的 Worker 網址
 const PLANS = { single: '單堂課程', fri4: '四堂週五優惠課程', sun4: '四堂週日優惠課程', fri8: '八堂週五優惠課程', sun8: '八堂週日優惠課程' };
@@ -87,9 +89,9 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
 const ymd = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}`;
-const sum = (m) => Object.entries(m.packs.reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
+const sum = (m) => Object.entries(m.packs.filter((p) => !p.revoked).reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
 const opts = Object.entries(PLANS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-let MEMBERS = [];
+let MEMBERS = [], STATS = [];
 $('pw').value = sessionStorage.getItem('pw') || '';
 $('plans').innerHTML = Object.entries(PLANS).map(([k, v], i) => `<label><input type="radio" name="plan" value="${k}" ${i ? '' : 'checked'}>${v}</label>`).join('');
 
@@ -129,6 +131,7 @@ async function load(n) {
       <td>${m.booked.length ? `${m.booked.length} 堂<br><button class="sm line" data-book="${m.code}">查看日期</button>` : '—'}</td>
       <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || '<tr><td colspan="6">還沒有會員。</td></tr>';
   } else {
+    STATS = res.stats;
     $('hours').value = res.settings.cancelHours;
     $('srows').innerHTML = res.stats.map((s) => `<tr class="${s.past ? 'past' : ''}">
       <td>${fmt(s.date)}</td><td>${s.count}</td><td>${s.names.map(esc).join('、') || '—'}</td>
@@ -138,14 +141,25 @@ async function load(n) {
 }
 const dlg = $('dlg');
 $('dx').onclick = () => dlg.close();
-dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+dlg.addEventListener('click', async (e) => {
+  if (e.target === dlg) { dlg.close(); return; }
+  const d = e.target.dataset;
+  if (!d.rv) return;
+  const note = +d.u ? `這份課程已預約的 ${d.u} 堂會一併取消。` : '這份課程目前沒有預約。';
+  if (!confirm(`確定回收「${d.l}」？${note}回收後會員將無法再使用這份課程。`)) return;
+  const res = await call({ action: 'admin_revoke_pack', code: d.c, packId: d.rv });
+  if (!res.ok) { alert(res.error); return; }
+  dlg.close(); load('manage');
+});
 $('manage').onclick = async (e) => {
   const lg = e.target.dataset.log;
   if (lg) {
     const m = MEMBERS.find((x) => x.code === lg);
     $('dt').textContent = `${m.name} 的購買紀錄`;
     $('ds').textContent = `帳號 ${m.code}｜合計剩 ${m.remaining} 堂`;
-    $('db').innerHTML = m.packs.map((p) => `<div class="rec"><b>${esc(p.label)}</b><br><span class="mut">${ymd(p.date)} 購買｜已用 ${p.total - p.remaining}／${p.total} 堂，剩 ${p.remaining} 堂</span></div>`).join('');
+    $('db').innerHTML = m.packs.map((p) => p.revoked
+      ? `<div class="rec" style="opacity:.55"><b>${esc(p.label)}</b> <span class="x">已回收</span><br><span class="mut">${ymd(p.date)} 購買</span></div>`
+      : `<div class="rec"><b>${esc(p.label)}</b><br><span class="mut">${ymd(p.date)} 購買｜已用 ${p.total - p.remaining}／${p.total} 堂，剩 ${p.remaining} 堂</span><br><button class="sm line" style="margin-top:6px" data-rv="${p.id}" data-c="${m.code}" data-u="${p.total - p.remaining}" data-l="${esc(p.label)}">回收這份課程</button></div>`).join('');
     dlg.showModal();
     return;
   }
@@ -175,6 +189,30 @@ $('stats').onclick = async (e) => {
 $('saveHours').onclick = async () => {
   const res = await call({ action: 'admin_set_hours', hours: $('hours').value });
   $('smsg').className = 'msg' + (res.ok ? '' : ' err'); $('smsg').textContent = res.ok ? '已儲存' : res.error;
+};
+$('xl').onclick = () => {
+  if (!STATS.length) { alert('目前沒有資料可匯出'); return; }
+  const rows = STATS.map((s) => ({
+    '日期': ymd(s.date),
+    '星期': '週' + '日一二三四五六'[new Date(s.date + 'T00:00:00').getDay()],
+    '報名人數': s.count,
+    '報名名單': s.names.join('、'),
+    '狀態': s.cancelled ? '已取消' : s.past ? '已結束' : '正常',
+  }));
+  const name = `日期統計_${new Date().toLocaleDateString('sv')}`;
+  if (window.XLSX) {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 12 }, { wch: 6 }, { wch: 10 }, { wch: 40 }, { wch: 8 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '日期統計');
+    XLSX.writeFile(wb, name + '.xlsx');
+  } else { // 函式庫載入失敗時改匯出 CSV（Excel 可直接開啟）
+    const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = '\ufeff' + [Object.keys(rows[0]), ...rows.map((r) => Object.values(r))].map((r) => r.map(q).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = name + '.csv'; a.click();
+  }
 };
 </script>
 </body>
