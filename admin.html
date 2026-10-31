@@ -10,37 +10,41 @@
 @media(prefers-color-scheme:dark){:root{--bg:#17121f;--fg:#efeaf7;--card:#221b2e;--ac:#f06aa6;--acfg:#1a0b13;--mut:#a79cbd;--bd:#3a3050}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 "Noto Sans TC",system-ui,sans-serif}
-main{max-width:900px;margin:0 auto;padding:24px 16px 48px}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
 h1{font-size:1.4rem;margin:0 0 12px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:18px;margin-top:16px}
 label{display:block;margin-top:12px;font-weight:600}
-input[type=text],input[type=password]{width:100%;font:inherit;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg)}
+input[type=text],input[type=password],input[type=number],select{font:inherit;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg)}
+.full{width:100%}
 .plans label{font-weight:400;margin:6px 0;display:flex;gap:8px;align-items:center}
-button{font:inherit;font-weight:700;padding:10px 18px;border:0;border-radius:8px;background:var(--ac);color:var(--acfg);cursor:pointer;margin-top:14px}
+button{font:inherit;font-weight:700;padding:9px 16px;border:0;border-radius:8px;background:var(--ac);color:var(--acfg);cursor:pointer;margin-top:12px}
 button.ghost{background:transparent;color:var(--fg);border:1px solid var(--bd);margin:0 6px 0 0}
 button.ghost.on{border-color:var(--ac);color:var(--ac)}
+button.sm{margin:0;padding:3px 10px;font-size:.9rem}
+button.line{background:transparent;color:var(--ac);border:1px solid var(--ac)}
 :focus-visible{outline:3px solid var(--ac);outline-offset:2px}
 .msg{margin-top:10px;font-weight:600}.err{color:#d32f2f}
 .code{font:800 1.8rem/1.2 ui-monospace,monospace;letter-spacing:.2em;color:var(--ac)}
 .wrap{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:640px}
+table{border-collapse:collapse;width:100%;min-width:720px}
 th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-align:top}
 td.c{font-family:ui-monospace,monospace;letter-spacing:.1em}
-.mut{color:var(--mut);font-size:.9rem}
+.mut{color:var(--mut);font-size:.9rem}.x{color:#d32f2f;font-weight:600}
+tr.past td{opacity:.55}
 </style>
 </head>
 <body>
 <main>
   <h1>管理後台</h1>
   <label for="pw">管理員密碼</label>
-  <input id="pw" type="password" autocomplete="current-password">
+  <input id="pw" class="full" type="password" autocomplete="current-password">
   <div style="margin-top:14px">
-    <button class="ghost on" id="t1">建立會員</button><button class="ghost" id="t2">會員管理</button>
+    <button class="ghost on" data-t="create">建立會員</button><button class="ghost" data-t="manage">會員管理</button><button class="ghost" data-t="stats">日期統計與設定</button>
   </div>
 
   <section id="create" class="card">
-    <label for="name">名字</label><input id="name" type="text">
-    <label for="line">Line 別名</label><input id="line" type="text">
+    <label for="name">名字</label><input id="name" class="full" type="text">
+    <label for="line">Line 別名</label><input id="line" class="full" type="text">
     <label>課程選項</label>
     <div class="plans" id="plans"></div>
     <button id="make">建立會員</button>
@@ -49,20 +53,31 @@ td.c{font-family:ui-monospace,monospace;letter-spacing:.1em}
 
   <section id="manage" class="card" hidden>
     <div class="wrap"><table>
-      <thead><tr><th>專屬帳號</th><th>名字</th><th>Line 別名</th><th>課程選項</th><th>剩餘堂數</th><th>已預約日期</th></tr></thead>
+      <thead><tr><th>專屬帳號</th><th>名字</th><th>Line 別名</th><th>課程與剩餘堂數</th><th>已預約日期</th><th>新增課程</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
     <p id="mmsg" class="msg"></p>
   </section>
+
+  <section id="stats" class="card" hidden>
+    <label for="hours">會員自行取消時限（上課日前幾小時，0 表示上課日前都可取消）</label>
+    <input id="hours" type="number" min="0" style="width:100px"> 小時 <button class="sm" id="saveHours">儲存</button>
+    <p class="mut">以上課日台灣時間 00:00 為基準計算。</p>
+    <div class="wrap"><table>
+      <thead><tr><th>日期</th><th>報名人數</th><th>名單</th><th>狀態</th><th></th></tr></thead>
+      <tbody id="srows"></tbody>
+    </table></div>
+    <p id="smsg" class="msg"></p>
+  </section>
 </main>
 <script>
-const API = 'https://dance-signup.where330.workers.dev/'; // ← 換成你的 Worker 網址
+const API = 'https://dance-signup.where330.workers.dev'; // ← 你的 Worker 網址
 const PLANS = { single: '單堂課程', fri4: '四堂週五優惠課程', sun4: '四堂週日優惠課程', fri8: '八堂週五優惠課程', sun8: '八堂週日優惠課程' };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const fmt = (d) => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
+const opts = Object.entries(PLANS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
 $('pw').value = sessionStorage.getItem('pw') || '';
-
 $('plans').innerHTML = Object.entries(PLANS).map(([k, v], i) => `<label><input type="radio" name="plan" value="${k}" ${i ? '' : 'checked'}>${v}</label>`).join('');
 
 async function call(body) {
@@ -73,11 +88,11 @@ async function call(body) {
   } catch { return { ok: false, error: '連線失敗，請稍後再試' }; }
 }
 function tab(n) {
-  $('create').hidden = n !== 1; $('manage').hidden = n !== 2;
-  $('t1').classList.toggle('on', n === 1); $('t2').classList.toggle('on', n === 2);
-  if (n === 2) load();
+  ['create', 'manage', 'stats'].forEach((t) => $(t).hidden = t !== n);
+  document.querySelectorAll('[data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === n));
+  if (n !== 'create') load(n);
 }
-$('t1').onclick = () => tab(1); $('t2').onclick = () => tab(2);
+document.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tab(b.dataset.t));
 
 $('make').onclick = async () => {
   const m = $('cmsg'); m.className = 'msg'; m.textContent = '建立中…';
@@ -86,13 +101,46 @@ $('make').onclick = async () => {
   m.innerHTML = `已建立 ${esc($('name').value)}，專屬帳號：<div class="code">${res.code}</div><span class="mut">請把這組帳號傳給會員。</span>`;
   $('name').value = ''; $('line').value = '';
 };
-async function load() {
-  $('mmsg').className = 'msg'; $('mmsg').textContent = '載入中…';
+
+async function load(n) {
+  const msg = n === 'manage' ? $('mmsg') : $('smsg');
+  msg.className = 'msg'; msg.textContent = '載入中…';
   const res = await call({ action: 'admin_list' });
-  if (!res.ok) { $('mmsg').className = 'msg err'; $('mmsg').textContent = res.error; $('rows').innerHTML = ''; return; }
-  $('mmsg').textContent = res.members.length ? '' : '還沒有會員，先到「建立會員」新增。';
-  $('rows').innerHTML = res.members.map((m) => `<tr><td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td><td>${esc(m.plan)}</td><td>${m.remaining}</td><td>${m.booked.map(fmt).join('、') || '—'}</td></tr>`).join('');
+  if (!res.ok) { msg.className = 'msg err'; msg.textContent = res.error; return; }
+  msg.textContent = '';
+  if (n === 'manage') {
+    $('rows').innerHTML = res.members.map((m) => `<tr>
+      <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td>
+      <td>${m.packs.map((p) => `${esc(p.label)}：剩 ${p.remaining} 堂`).join('<br>')}<br><b>合計剩 ${m.remaining} 堂</b></td>
+      <td>${m.booked.map(fmt).join('<br>') || '—'}</td>
+      <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || '<tr><td colspan="6">還沒有會員。</td></tr>';
+  } else {
+    $('hours').value = res.settings.cancelHours;
+    $('srows').innerHTML = res.stats.map((s) => `<tr class="${s.past ? 'past' : ''}">
+      <td>${fmt(s.date)}</td><td>${s.count}</td><td>${s.names.map(esc).join('、') || '—'}</td>
+      <td>${s.cancelled ? '<span class="x">已取消</span>' : s.past ? '已結束' : '正常'}</td>
+      <td>${!s.cancelled && !s.past ? `<button class="sm line" data-cx="${s.date}" data-n="${s.count}">取消這天</button>` : ''}</td></tr>`).join('');
+  }
 }
+$('manage').onclick = async (e) => {
+  const code = e.target.dataset.add; if (!code) return;
+  const plan = document.querySelector(`select[data-s="${code}"]`).value;
+  if (!confirm(`為 ${code} 加入「${PLANS[plan]}」？`)) return;
+  const res = await call({ action: 'admin_add_pack', code, plan });
+  if (!res.ok) { $('mmsg').className = 'msg err'; $('mmsg').textContent = res.error; return; }
+  load('manage');
+};
+$('stats').onclick = async (e) => {
+  const d = e.target.dataset.cx; if (!d) return;
+  if (!confirm(`確定取消 ${fmt(d)} 的課？已報名的 ${e.target.dataset.n} 位會員會自動退回堂數。`)) return;
+  const res = await call({ action: 'admin_cancel_date', date: d });
+  if (!res.ok) { $('smsg').className = 'msg err'; $('smsg').textContent = res.error; return; }
+  load('stats');
+};
+$('saveHours').onclick = async () => {
+  const res = await call({ action: 'admin_set_hours', hours: $('hours').value });
+  $('smsg').className = 'msg' + (res.ok ? '' : ' err'); $('smsg').textContent = res.ok ? '已儲存' : res.error;
+};
 </script>
 </body>
 </html>

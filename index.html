@@ -9,20 +9,24 @@
 @media(prefers-color-scheme:dark){:root{--bg:#17121f;--fg:#efeaf7;--card:#221b2e;--ac:#f06aa6;--acfg:#1a0b13;--mut:#a79cbd;--bd:#3a3050}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 "Noto Sans TC",system-ui,sans-serif}
-main{max-width:460px;margin:0 auto;padding:32px 16px 48px}
+main{max-width:480px;margin:0 auto;padding:32px 16px 48px}
 h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:.04em}
 p{margin:.3rem 0}.mut{color:var(--mut)}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:18px;margin-top:18px}
 input[type=text]{width:100%;font:inherit;font-size:1.4rem;letter-spacing:.25em;text-transform:uppercase;text-align:center;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg)}
 button{font:inherit;font-weight:700;width:100%;margin-top:14px;padding:12px;border:0;border-radius:8px;background:var(--ac);color:var(--acfg);cursor:pointer}
 button:disabled{opacity:.4;cursor:not-allowed}
+button.sm{width:auto;margin:0;padding:4px 12px;font-size:.9rem;background:transparent;color:var(--ac);border:1px solid var(--ac)}
 :focus-visible{outline:3px solid var(--ac);outline-offset:2px}
 .left{font-size:2.6rem;font-weight:800;line-height:1;color:var(--ac)}
 #dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-#dates label{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--bd);border-radius:8px;cursor:pointer}
+#dates label{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--bd);border-radius:8px;cursor:pointer;font-size:.95rem}
 #dates label:has(input:checked){border-color:var(--ac);background:color-mix(in srgb,var(--ac) 12%,transparent)}
 #dates label:has(input:disabled){opacity:.4;cursor:not-allowed}
 #dates input{width:18px;height:18px;accent-color:var(--ac)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)}
+.row:last-child{border:0}
+.tag{font-size:.85rem;color:var(--mut)}.tag.x{color:#d32f2f}.tag.ok{color:#2e7d32}
 .msg{margin-top:12px;font-weight:600}.err{color:#d32f2f}.ok{color:#2e7d32}
 </style>
 </head>
@@ -41,7 +45,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
     <div class="card">
       <p id="who" class="mut"></p>
       <p><span class="left" id="left"></span> 堂可預約</p>
-      <p class="mut">已預約：<span id="booked"></span></p>
+      <div id="packs"></div>
     </div>
     <div class="card">
       <p><b>選擇上課日期</b>（已選 <span id="sel">0</span> 堂）</p>
@@ -50,14 +54,20 @@ button:disabled{opacity:.4;cursor:not-allowed}
       <button id="go" disabled>送出預約</button>
       <p id="msg" class="msg"></p>
     </div>
+    <div class="card">
+      <p><b>我的上課紀錄</b></p>
+      <p class="mut" id="cancelHint"></p>
+      <div id="history"></div>
+    </div>
   </section>
 </main>
 <script>
-const API = 'https://dance-signup.where330.workers.dev/'; // ← 換成你的 Worker 網址
+const API = 'https://dance-signup.where330.workers.dev'; // ← 你的 Worker 網址
 const $ = (id) => document.getElementById(id);
 let code = '', info = null;
 
-const fmt = (d) => `${+d.slice(5, 7)}/${+d.slice(8)}（${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
+const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
+const STATUS = { booked: ['已預約', 'ok'], done: ['已上課', ''], 'cancel-admin': ['老師已取消，堂數已退回', 'x'], 'cancel-member': ['你已取消，堂數已退回', 'x'] };
 async function call(body) {
   try {
     const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) });
@@ -73,34 +83,50 @@ $('loginBtn').onclick = async () => {
   if (!res.ok) { $('loginMsg').textContent = res.error; return; }
   info = res.info; $('login').hidden = true; $('app').hidden = false; render();
 };
-//$('code').onkeydown = (e) => e.key === 'Enter' && $('loginBtn').click();
+$('code').onkeydown = (e) => e.key === 'Enter' && $('loginBtn').click();
 
 function render() {
-  $('who').textContent = `${info.name}｜${info.plan}`;
+  $('who').textContent = info.name;
   $('left').textContent = info.remaining;
-  $('booked').textContent = info.booked.length ? info.booked.map(fmt).join('、') : '尚無';
-  $('hint').textContent = info.remaining ? '可以只選一部分，剩下的堂數之後再來選。' : '堂數已用完，如需續課請聯絡老師。';
+  $('packs').innerHTML = info.packs.map((p) => `<div class="row"><span>${p.label}</span><span class="tag">剩 ${p.remaining} 堂</span></div>`).join('');
+  $('hint').textContent = info.remaining ? '可以只選一部分，剩下的堂數之後再來選。有優惠課程時會先扣優惠課程。' : '目前沒有可用堂數，如需續課請聯絡老師。';
   const box = $('dates'); box.innerHTML = '';
   info.options.forEach((d) => {
     const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox" value="${d}"><span>${fmt(d)}</span>`;
+    l.innerHTML = `<input type="checkbox" value="${d}" data-w="${new Date(d + 'T00:00:00').getDay()}"><span>${fmt(d)}</span>`;
     box.append(l);
   });
   box.onchange = update; update();
+  $('cancelHint').textContent = info.cancelHours ? `需在上課日前 ${info.cancelHours} 小時取消，超過時限請聯絡老師。` : '';
+  $('history').innerHTML = info.history.length ? info.history.map((h) => {
+    const [t, c] = STATUS[h.status];
+    return `<div class="row"><span>${fmt(h.date)}<br><span class="tag">${h.plan}</span></span><span style="text-align:right"><span class="tag ${c}">${t}</span>${h.canCancel ? `<br><button class="sm" data-d="${h.date}">取消</button>` : ''}</span></div>`;
+  }).join('') : '<p class="mut">還沒有紀錄。</p>';
 }
+// 每個日期是否還能再選：週五先用週五堂數，不夠時用單堂堂數
 function update() {
-  const cs = [...document.querySelectorAll('#dates input')];
-  const n = cs.filter((c) => c.checked).length;
-  cs.forEach((c) => (c.disabled = !c.checked && n >= info.remaining));
-  $('sel').textContent = n; $('go').disabled = n === 0;
+  const cs = [...document.querySelectorAll('#dates input')], c = info.caps;
+  const ok = (f, s) => Math.max(0, f - c.fri) + Math.max(0, s - c.sun) <= c.flex;
+  const on = cs.filter((x) => x.checked);
+  const f = on.filter((x) => x.dataset.w === '5').length, s = on.length - f;
+  cs.forEach((x) => { x.disabled = !x.checked && !ok(f + (x.dataset.w === '5' ? 1 : 0), s + (x.dataset.w === '5' ? 0 : 1)); });
+  $('sel').textContent = on.length; $('go').disabled = on.length === 0;
 }
 $('go').onclick = async () => {
-  const dates = [...document.querySelectorAll('#dates input:checked')].map((c) => c.value);
+  const dates = [...document.querySelectorAll('#dates input:checked')].map((x) => x.value);
   $('go').disabled = true; $('msg').textContent = '送出中…'; $('msg').className = 'msg';
   const res = await call({ action: 'book', code, dates });
   if (!res.ok) { $('msg').textContent = res.error; $('msg').className = 'msg err'; update(); return; }
   info = res.info; render();
   $('msg').textContent = `已預約 ${dates.length} 堂`; $('msg').className = 'msg ok';
+};
+$('history').onclick = async (e) => {
+  const d = e.target.dataset.d;
+  if (!d || !confirm(`確定取消 ${fmt(d)} 的課？堂數會退回。`)) return;
+  const res = await call({ action: 'cancel', code, date: d });
+  if (!res.ok) { alert(res.error); return; }
+  info = res.info; render();
+  $('msg').textContent = '已取消，堂數已退回'; $('msg').className = 'msg ok';
 };
 </script>
 </body>
