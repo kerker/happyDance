@@ -28,6 +28,15 @@ button.sm{width:auto;margin:0;padding:4px 12px;font-size:.9rem;background:transp
 .row:last-child{border:0}
 .tag{font-size:.85rem;color:var(--mut)}.tag.x{color:#d32f2f}.tag.ok{color:#2e7d32}
 .msg{margin-top:12px;font-weight:600}.err{color:#d32f2f}.ok{color:#2e7d32}
+@media(min-width:900px){
+  main{max-width:1040px}
+  #login{max-width:480px}
+  #app:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:20px;align-items:start}
+  #c1{grid-column:1;grid-row:1}
+  #c2{grid-column:1;grid-row:2}
+  #c3{grid-column:2;grid-row:1 / span 2;max-height:calc(100vh - 150px);overflow-y:auto}
+  #dates{grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 <body>
@@ -42,19 +51,19 @@ button.sm{width:auto;margin:0;padding:4px 12px;font-size:.9rem;background:transp
   </section>
 
   <section id="app" hidden>
-    <div class="card">
+    <div class="card" id="c1">
       <p id="who" class="mut"></p>
       <p><span class="left" id="left"></span> 堂可預約</p>
       <div id="packs"></div>
     </div>
-    <div class="card">
+    <div class="card" id="c2">
       <p><b>選擇上課日期</b>（已選 <span id="sel">0</span> 堂）</p>
       <p class="mut" id="hint"></p>
       <div id="dates"></div>
       <button id="go" disabled>送出預約</button>
       <p id="msg" class="msg"></p>
     </div>
-    <div class="card">
+    <div class="card" id="c3">
       <p><b>我的上課紀錄</b></p>
       <p class="mut" id="cancelHint"></p>
       <div id="history"></div>
