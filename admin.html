@@ -53,7 +53,7 @@ tr.past td{opacity:.55}
 
   <section id="manage" class="card" hidden>
     <div class="wrap"><table>
-      <thead><tr><th>專屬帳號</th><th>名字</th><th>Line 別名</th><th>課程與剩餘堂數</th><th>已預約日期</th><th>新增課程</th></tr></thead>
+      <thead><tr><th>專屬帳號</th><th>名字</th><th>Line 別名</th><th>購買課程與剩餘堂數</th><th>已預約日期</th><th>新增課程</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
     <p id="mmsg" class="msg"></p>
@@ -76,6 +76,8 @@ const PLANS = { single: '單堂課程', fri4: '四堂週五優惠課程', sun4: 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
+const ymd = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}`;
+const sum = (m) => Object.entries(m.packs.reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
 const opts = Object.entries(PLANS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
 $('pw').value = sessionStorage.getItem('pw') || '';
 $('plans').innerHTML = Object.entries(PLANS).map(([k, v], i) => `<label><input type="radio" name="plan" value="${k}" ${i ? '' : 'checked'}>${v}</label>`).join('');
@@ -111,7 +113,7 @@ async function load(n) {
   if (n === 'manage') {
     $('rows').innerHTML = res.members.map((m) => `<tr>
       <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td>
-      <td>${m.packs.map((p) => `${esc(p.label)}：剩 ${p.remaining} 堂`).join('<br>')}<br><b>合計剩 ${m.remaining} 堂</b></td>
+      <td><b>購買統計：</b>${esc(sum(m))}<br><span class="mut">購買紀錄</span><br>${m.packs.map((p) => `${esc(p.label)}　${ymd(p.date)} 購買　已用 ${p.total - p.remaining}／${p.total}，剩 ${p.remaining} 堂`).join('<br>')}<br><b>合計剩 ${m.remaining} 堂</b></td>
       <td>${m.booked.map(fmt).join('<br>') || '—'}</td>
       <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || '<tr><td colspan="6">還沒有會員。</td></tr>';
   } else {

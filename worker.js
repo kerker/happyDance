@@ -152,7 +152,10 @@ export default {
           ok: true, settings: data.settings, stats,
           members: data.members.map((m) => ({
             code: m.code, name: m.name, line: m.line,
-            packs: m.packs.map((p) => ({ label: PLANS[p.plan].label, remaining: left(m, p) })),
+            packs: m.packs.map((p) => ({
+              label: PLANS[p.plan].label, total: p.total, remaining: left(m, p),
+              date: new Date(new Date(p.added || m.created || Date.now()).getTime() + 8 * 3600e3).toISOString().slice(0, 10),
+            })),
             remaining: m.packs.reduce((n, p) => n + left(m, p), 0),
             booked: m.bookings.filter(active).map((x) => x.date).sort(),
           })),
