@@ -48,6 +48,7 @@ dialog h2{font-size:1.15rem;margin:0 0 4px}
 
   <section id="create" class="card">
     <label for="name">名字</label><input id="name" class="full" type="text">
+    <label for="phone">電話（用來判斷會員是否重複）</label><input id="phone" class="full" type="text" inputmode="tel" autocomplete="off" placeholder="0912-345-678（可含橫線、空格或 +886）">
     <label for="line">Line 別名</label><input id="line" class="full" type="text">
     <label>課程選項</label>
     <div class="plans" id="plans"></div>
@@ -56,8 +57,10 @@ dialog h2{font-size:1.15rem;margin:0 0 4px}
   </section>
 
   <section id="manage" class="card" hidden>
+    <div style="margin-bottom:12px"><button class="ghost on" id="fa" data-f="0" style="margin-top:0">活躍會員</button><button class="ghost" id="fi" data-f="1" style="margin-top:0">非活躍會員</button></div>
+    <p class="mut" style="margin-top:0">非活躍：堂數歸 0、沒有未來預約，且超過三個月沒有購買課程。為非活躍會員加入課程後，會自動回到活躍。</p>
     <div class="wrap"><table>
-      <thead><tr><th>專屬帳號</th><th>名字</th><th>Line 別名</th><th>購買課程與剩餘堂數</th><th>已預約日期</th><th>新增課程</th></tr></thead>
+      <thead><tr><th>專屬帳號</th><th>名字</th><th>電話</th><th>Line 別名</th><th>購買課程與剩餘堂數</th><th>已預約日期</th><th>新增課程</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
     <p id="mmsg" class="msg"></p>
@@ -88,10 +91,11 @@ const PLANS = { single: '單堂課程', fri4: '四堂週五優惠課程', sun4: 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}（週${'日一二三四五六'[new Date(d + 'T00:00:00').getDay()]}）`;
+const fmtPhone = (d) => (/^09\d{8}$/.test(d) ? d.replace(/(\d{4})(\d{3})(\d{3})/, '$1-$2-$3') : d);
 const ymd = (d) => `${d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8)}`;
 const sum = (m) => Object.entries(m.packs.filter((p) => !p.revoked).reduce((o, p) => ((o[p.label] = (o[p.label] || 0) + 1), o), {})).map(([k, v]) => `${k}×${v}`).join('、');
 const opts = Object.entries(PLANS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-let MEMBERS = [], STATS = [];
+let MEMBERS = [], STATS = [], SHOWINACTIVE = false;
 $('pw').value = sessionStorage.getItem('pw') || '';
 $('plans').innerHTML = Object.entries(PLANS).map(([k, v], i) => `<label><input type="radio" name="plan" value="${k}" ${i ? '' : 'checked'}>${v}</label>`).join('');
 
@@ -111,10 +115,10 @@ document.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tab(b.dat
 
 $('make').onclick = async () => {
   const m = $('cmsg'); m.className = 'msg'; m.textContent = '建立中…';
-  const res = await call({ action: 'admin_create', name: $('name').value, line: $('line').value, plan: document.querySelector('input[name=plan]:checked').value });
+  const res = await call({ action: 'admin_create', name: $('name').value, phone: $('phone').value, line: $('line').value, plan: document.querySelector('input[name=plan]:checked').value });
   if (!res.ok) { m.className = 'msg err'; m.textContent = res.error; return; }
   m.innerHTML = `已建立 ${esc($('name').value)}，專屬帳號：<div class="code">${res.code}</div><span class="mut">請把這組帳號傳給會員。</span>`;
-  $('name').value = ''; $('line').value = '';
+  $('name').value = ''; $('phone').value = ''; $('line').value = '';
 };
 
 async function load(n) {
@@ -125,11 +129,14 @@ async function load(n) {
   msg.textContent = '';
   if (n === 'manage') {
     MEMBERS = res.members;
-    $('rows').innerHTML = res.members.map((m) => `<tr>
-      <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td>
+    $('fa').textContent = `活躍會員（${res.members.filter((m) => !m.inactive).length}）`;
+    $('fi').textContent = `非活躍會員（${res.members.filter((m) => m.inactive).length}）`;
+    $('fa').classList.toggle('on', !SHOWINACTIVE); $('fi').classList.toggle('on', SHOWINACTIVE);
+    $('rows').innerHTML = res.members.filter((m) => !!m.inactive === SHOWINACTIVE).map((m) => `<tr>
+      <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.phone ? fmtPhone(m.phone) : '—')}</td><td>${esc(m.line)}</td>
       <td><b>購買統計：</b>${esc(sum(m))}<br><b>合計剩 ${m.remaining} 堂</b><br><button class="sm line" data-log="${m.code}">購買紀錄</button></td>
       <td>${m.booked.length ? `${m.booked.length} 堂<br><button class="sm line" data-book="${m.code}">查看日期</button>` : '—'}</td>
-      <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || '<tr><td colspan="6">還沒有會員。</td></tr>';
+      <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || `<tr><td colspan="7">${SHOWINACTIVE ? '沒有非活躍會員。' : '沒有活躍會員。'}</td></tr>`;
   } else {
     STATS = res.stats;
     $('hours').value = res.settings.cancelHours;
@@ -152,6 +159,8 @@ dlg.addEventListener('click', async (e) => {
   dlg.close(); load('manage');
 });
 $('manage').onclick = async (e) => {
+  const f = e.target.dataset.f;
+  if (f) { SHOWINACTIVE = f === '1'; load('manage'); return; }
   const lg = e.target.dataset.log;
   if (lg) {
     const m = MEMBERS.find((x) => x.code === lg);
@@ -190,6 +199,13 @@ $('saveHours').onclick = async () => {
   const res = await call({ action: 'admin_set_hours', hours: $('hours').value });
   $('smsg').className = 'msg' + (res.ok ? '' : ' err'); $('smsg').textContent = res.ok ? '已儲存' : res.error;
 };
+$('phone').addEventListener('blur', () => {
+  let v = $('phone').value.replace(/\D/g, '');
+  if (!v) return;
+  if (v.startsWith('886')) v = '0' + v.slice(3).replace(/^0/, '');
+  if (/^9\d{8}$/.test(v)) v = '0' + v;
+  $('phone').value = fmtPhone(v);
+});
 $('xl').onclick = () => {
   if (!STATS.length) { alert('目前沒有資料可匯出'); return; }
   const rows = STATS.map((s) => ({

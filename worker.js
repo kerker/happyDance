@@ -8,6 +8,14 @@ const PLANS = {
 };
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const FILE = 'data.json';
+// 電話統一格式：只留數字；+886 / 886 開頭轉成 0 開頭；手機一律 10 碼（09 開頭）。不合格回傳空字串
+function normPhone(s) {
+  let d = String(s || '').replace(/\D/g, '');
+  if (d.startsWith('886')) d = '0' + d.slice(3).replace(/^0/, '');
+  if (/^9\d{8}$/.test(d)) d = '0' + d;
+  if (d.startsWith('09')) return d.length === 10 ? d : '';
+  return d.length >= 8 && d.length <= 15 ? d : '';
+}
 
 const b64e = (s) => { let t = ''; new TextEncoder().encode(s).forEach((x) => (t += String.fromCharCode(x))); return btoa(t); };
 const b64d = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, '')), (c) => c.charCodeAt(0)));
@@ -63,6 +71,12 @@ function upcoming(days) {
 const active = (b) => b.status !== 'cancelled';
 const left = (m, p) => (p.revoked ? 0 : p.total - m.bookings.filter((b) => b.packId === p.id && active(b)).length);
 const live = (m) => m.packs.filter((p) => !p.revoked); // 已回收的課程不計入
+// 非活躍：堂數歸 0、沒有未來的預約，且最近一次購買已超過三個月
+function isInactive(m) {
+  const lim = new Date(); lim.setMonth(lim.getMonth() - 3);
+  const last = live(m).map((p) => p.added || m.created || '').sort().pop() || m.created || '';
+  return live(m).every((p) => left(m, p) === 0) && !m.bookings.some((x) => active(x) && x.date >= today()) && last < lim.toISOString();
+}
 // 取消時限：以上課日台灣時間 00:00 為基準
 const canCancel = (b, data) => active(b) && b.date >= today() && Date.parse(b.date + 'T00:00:00+08:00') - Date.now() >= data.settings.cancelHours * 3600e3;
 
@@ -152,7 +166,7 @@ export default {
         return reply({
           ok: true, settings: data.settings, stats,
           members: data.members.map((m) => ({
-            code: m.code, name: m.name, line: m.line,
+            code: m.code, name: m.name, line: m.line, phone: m.phone || '', inactive: isInactive(m),
             packs: m.packs.map((p) => ({
               id: p.id, revoked: !!p.revoked,
               label: PLANS[p.plan].label, total: p.total, remaining: left(m, p),
@@ -165,11 +179,16 @@ export default {
       }
       if (b.action === 'admin_create') {
         const name = String(b.name || '').trim();
+        const phone = normPhone(b.phone);
         if (!name || !PLANS[b.plan]) return reply({ ok: false, error: '資料不完整' });
+        if (!phone) return reply({ ok: false, error: '電話格式不正確（手機需為 10 碼，例如 0912-345-678）' });
         const code = await mutate(env, (data) => {
+          const key = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+          const dup = data.members.find((m) => key(m.name) === key(name) && m.phone === phone);
+          if (dup) throw new Error(`該會員已存在（${dup.name}，帳號 ${dup.code}），請到「會員管理」為他新增課程`);
           let c;
           do { c = Array.from(crypto.getRandomValues(new Uint8Array(8)), (x) => ALPHABET[x % 32]).join(''); } while (data.members.some((m) => m.code === c));
-          data.members.push({ code: c, name, line: String(b.line || '').trim(), packs: [{ id: 'p0', plan: b.plan, total: PLANS[b.plan].total }], bookings: [], created: new Date().toISOString() });
+          data.members.push({ code: c, name, phone, line: String(b.line || '').trim(), packs: [{ id: 'p0', plan: b.plan, total: PLANS[b.plan].total }], bookings: [], created: new Date().toISOString() });
           return c;
         });
         return reply({ ok: true, code });
