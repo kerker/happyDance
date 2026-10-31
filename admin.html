@@ -126,7 +126,7 @@ async function load(n) {
     $('rows').innerHTML = res.members.map((m) => `<tr>
       <td class="c">${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.line)}</td>
       <td><b>購買統計：</b>${esc(sum(m))}<br><b>合計剩 ${m.remaining} 堂</b><br><button class="sm line" data-log="${m.code}">購買紀錄</button></td>
-      <td>${m.booked.map(fmt).join('<br>') || '—'}</td>
+      <td>${m.booked.length ? `${m.booked.length} 堂<br><button class="sm line" data-book="${m.code}">查看日期</button>` : '—'}</td>
       <td><select data-s="${m.code}">${opts}</select><br><button class="sm line" data-add="${m.code}">加入課程</button></td></tr>`).join('') || '<tr><td colspan="6">還沒有會員。</td></tr>';
   } else {
     $('hours').value = res.settings.cancelHours;
@@ -146,6 +146,15 @@ $('manage').onclick = async (e) => {
     $('dt').textContent = `${m.name} 的購買紀錄`;
     $('ds').textContent = `帳號 ${m.code}｜合計剩 ${m.remaining} 堂`;
     $('db').innerHTML = m.packs.map((p) => `<div class="rec"><b>${esc(p.label)}</b><br><span class="mut">${ymd(p.date)} 購買｜已用 ${p.total - p.remaining}／${p.total} 堂，剩 ${p.remaining} 堂</span></div>`).join('');
+    dlg.showModal();
+    return;
+  }
+  const bk = e.target.dataset.book;
+  if (bk) {
+    const m = MEMBERS.find((x) => x.code === bk);
+    $('dt').textContent = `${m.name} 的已預約日期`;
+    $('ds').textContent = `帳號 ${m.code}｜共 ${m.booked.length} 堂`;
+    $('db').innerHTML = m.booked.map((d) => `<div class="rec">${fmt(d)}</div>`).join('');
     dlg.showModal();
     return;
   }
